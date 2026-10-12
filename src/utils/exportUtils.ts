@@ -434,3 +434,149 @@ export function exportAuditLogsToPDF(logs: AuditLog[]) {
 
   doc.save(`Audit_Trail_${new Date().toISOString().split('T')[0]}.pdf`);
 }
+
+// 6. Comprehensive Executive Audit Report for Administrator
+export function exportAuditExecutiveReportPDF(
+  logs: AuditLog[],
+  reportTitle = 'Executive Governance & System Audit Report'
+) {
+  const doc = new jsPDF('p', 'mm', 'a4'); // Portrait
+
+  // Header Title
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('OFFICE OF THE CONTROLLER OF EXAMINATIONS', 105, 14, { align: 'center' });
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(67, 56, 202); // indigo-700
+  doc.text(reportTitle.toUpperCase(), 105, 20, { align: 'center' });
+  doc.setTextColor(30, 41, 59);
+
+  // Subtitle & Report Date
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Official Institutional Security & Operation Ledger | Generated: ${new Date().toLocaleString()}`, 105, 25, {
+    align: 'center',
+  });
+
+  // Calculate Metrics
+  const totalEvents = logs.length;
+  const criticalCount = logs.filter((l) => l.severity === 'critical').length;
+  const warningCount = logs.filter((l) => l.severity === 'warning').length;
+  const infoCount = logs.filter((l) => l.severity === 'info').length;
+
+  const authCount = logs.filter((l) => l.category === 'AUTH').length;
+  const allocCount = logs.filter((l) => l.category === 'ALLOCATION').length;
+  const attendanceCount = logs.filter((l) => l.category === 'ATTENDANCE').length;
+  const examDutyCount = logs.filter((l) => l.category === 'DUTY' || l.category === 'EXAM').length;
+
+  // Executive KPI Summary Box
+  doc.setDrawColor(226, 232, 240);
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, 29, 182, 24, 2, 2, 'FD');
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('AUDIT SUMMARY METRICS', 18, 34);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(`Total Logged Events: ${totalEvents}`, 18, 40);
+  doc.text(`Critical Security Alerts: ${criticalCount}`, 18, 46);
+
+  doc.text(`Operational Warnings: ${warningCount}`, 75, 40);
+  doc.text(`Informational Logs: ${infoCount}`, 75, 46);
+
+  doc.text(`Authentication/Logins: ${authCount}`, 130, 40);
+  doc.text(`Seating & Duty Events: ${allocCount + examDutyCount}`, 130, 46);
+
+  // Category Breakdown Mini Table
+  const categories = ['AUTH', 'ALLOCATION', 'DUTY', 'ATTENDANCE', 'EXAM', 'ROOM', 'STUDENT'] as const;
+  const categoryStats = categories.map((cat) => {
+    const count = logs.filter((l) => l.category === cat).length;
+    const warnings = logs.filter((l) => l.category === cat && (l.severity === 'warning' || l.severity === 'critical')).length;
+    return [cat, count.toString(), warnings.toString()];
+  });
+
+  autoTable(doc, {
+    startY: 56,
+    head: [['Category Domain', 'Total Event Count', 'Flagged Warnings / Alerts']],
+    body: categoryStats,
+    theme: 'plain',
+    styles: { fontSize: 7, cellPadding: 1.5 },
+    headStyles: { fillColor: [241, 245, 249], textColor: [51, 65, 85], fontStyle: 'bold', fontSize: 7 },
+    columnStyles: {
+      0: { cellWidth: 50, fontStyle: 'bold' },
+      1: { cellWidth: 40, halign: 'center' },
+      2: { cellWidth: 40, halign: 'center' },
+    },
+  });
+
+  // Main Audit Log Table
+  // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
+  const startLogTableY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 95) + 6;
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CHRONOLOGICAL AUDIT EVENT RECORDS', 14, startLogTableY - 1.5);
+
+  const tableData = logs.slice(0, 150).map((l, i) => [
+    (i + 1).toString(),
+    new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    l.actor,
+    l.category,
+    l.action,
+    l.severity.toUpperCase(),
+    l.details,
+  ]);
+
+  autoTable(doc, {
+    startY: startLogTableY,
+    head: [['#', 'Time', 'Actor', 'Cat', 'Action Code', 'Level', 'Audit Details']],
+    body: tableData,
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 1.8, valign: 'middle' },
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+    columnStyles: {
+      0: { cellWidth: 6, halign: 'center' },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 26 },
+      3: { cellWidth: 16 },
+      4: { cellWidth: 28, fontStyle: 'bold' },
+      5: { cellWidth: 16, halign: 'center' },
+      6: { cellWidth: 72 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 5) {
+        if (data.cell.raw === 'CRITICAL') {
+          data.cell.styles.textColor = [185, 28, 28];
+          data.cell.styles.fontStyle = 'bold';
+        } else if (data.cell.raw === 'WARNING') {
+          data.cell.styles.textColor = [180, 83, 9];
+          data.cell.styles.fontStyle = 'bold';
+        } else {
+          data.cell.styles.textColor = [30, 41, 59];
+        }
+      }
+    },
+  });
+
+  // Footer & Official Attestation
+  // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
+  const footerY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 240) + 14;
+
+  if (footerY < 270) {
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text('This is an authenticated institutional audit record generated by SESMS.', 14, footerY);
+    doc.text('No manual amendments permitted without COE authorization.', 14, footerY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Controller of Examinations', 145, footerY);
+    doc.line(145, footerY - 4, 190, footerY - 4);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Institutional Examination Section', 145, footerY + 4);
+  }
+
+  doc.save(`Audit_Report_${reportTitle.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+}
