@@ -63,6 +63,18 @@ interface ExamContextType {
     year?: number,
     section?: string
   ) => Promise<{ success: boolean; message: string }>;
+  requestPasswordResetCode: (
+    role: Role,
+    email: string,
+    identifier: string
+  ) => Promise<{ success: boolean; message: string; code?: string; accountName?: string }>;
+  resetPassword: (
+    role: Role,
+    email: string,
+    identifier: string,
+    newPassword: string,
+    verificationCode?: string
+  ) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
 
   // Current user / role
@@ -1523,6 +1535,247 @@ export const ExamProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: false, message: 'Invalid role for registration.' };
   };
 
+  // Password Reset / Forgot Password state
+  const [resetVerificationCodes, setResetVerificationCodes] = useState<
+    Record<
+      string,
+      { code: string; expiresAt: number; role: Role; email: string; identifier: string; accountName: string }
+    >
+  >({});
+
+  const requestPasswordResetCode = async (
+    role: Role,
+    email: string,
+    identifier: string
+  ): Promise<{ success: boolean; message: string; code?: string; accountName?: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanId = identifier.trim().toUpperCase();
+
+    if (!cleanEmail) {
+      addToast('error', 'Validation Error', 'Please provide your registered institutional email.');
+      return { success: false, message: 'Please provide registered institutional email.' };
+    }
+
+    if (!cleanId) {
+      const idLabel = role === 'student' ? 'Roll Number' : role === 'incharge' ? 'Faculty ID' : 'COE Passcode';
+      addToast('error', 'Validation Error', `Please provide your ${idLabel}.`);
+      return { success: false, message: `Please provide your ${idLabel}.` };
+    }
+
+    let accountName = '';
+
+    if (role === 'student') {
+      const studentByRoll = students.find((s) => s.rollNo.toUpperCase() === cleanId);
+      if (!studentByRoll) {
+        const msg = `Candidate Roll Number "${cleanId}" not found in institutional student database.`;
+        addToast('error', 'Candidate Not Found', msg);
+        return { success: false, message: msg };
+      }
+
+      if (studentByRoll.email.trim().toLowerCase() !== cleanEmail) {
+        const msg = `Email "${cleanEmail}" does not match the institutional email registered for Roll No "${cleanId}".`;
+        addToast('error', 'Email Mismatch', msg);
+        return { success: false, message: msg };
+      }
+
+      accountName = studentByRoll.name;
+    } else if (role === 'incharge') {
+      const faculty = inCharges.find((f) => f.facultyId.toUpperCase() === cleanId);
+      if (!faculty) {
+        const msg = `Faculty ID "${cleanId}" not found in institutional faculty database.`;
+        addToast('error', 'Faculty Not Found', msg);
+        return { success: false, message: msg };
+      }
+
+      if (faculty.email.trim().toLowerCase() !== cleanEmail) {
+        const msg = `Email "${cleanEmail}" does not match the institutional email on record for Faculty ID "${cleanId}".`;
+        addToast('error', 'Email Mismatch', msg);
+        return { success: false, message: msg };
+      }
+
+      accountName = faculty.name;
+    } else if (role === 'admin') {
+      if (cleanId !== 'SESMS-COE-2026' && cleanId !== 'COE-ADMIN') {
+        const msg =
+          'Invalid COE Authorization Passcode. Admin password reset requires the COE Master Security Passcode (SESMS-COE-2026).';
+        addToast('error', 'COE Authorization Failed', msg);
+        return { success: false, message: msg };
+      }
+
+      accountName = 'Controller of Examinations';
+    }
+
+    // Generate random 6-digit verification code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
+
+    setResetVerificationCodes((prev) => ({
+      ...prev,
+      [`${role}:${cleanEmail}`]: {
+        code,
+        expiresAt,
+        role,
+        email: cleanEmail,
+        identifier: cleanId,
+        accountName,
+      },
+    }));
+
+    logAudit(
+      'AUTH',
+      'PASSWORD_RESET_REQUESTED',
+      `Password reset verification code requested for ${role} (${cleanEmail}, ID: ${cleanId}). Security code generated.`,
+      role === 'admin' ? 'warning' : 'info'
+    );
+
+    addToast(
+      'info',
+      'Verification Code Generated',
+      `6-digit reset code generated for ${cleanEmail}: ${code}`
+    );
+
+    return {
+      success: true,
+      message: `Identity verified for ${accountName}. Reset verification code dispatched.`,
+      code,
+      accountName,
+    };
+  };
+
+  const resetPassword = async (
+    role: Role,
+    email: string,
+    identifier: string,
+    newPassword: string,
+    verificationCode?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanId = identifier.trim().toUpperCase();
+    const cleanPassword = newPassword.trim();
+
+    if (!cleanEmail || !cleanId || !cleanPassword) {
+      addToast('error', 'Validation Error', 'All fields are required to reset your password.');
+      return { success: false, message: 'All fields are required.' };
+    }
+
+    if (cleanPassword.length < 4) {
+      addToast('error', 'Security Requirement', 'New password must be at least 4 characters long.');
+      return { success: false, message: 'New password must be at least 4 characters.' };
+    }
+
+    // Verify verification code if one was generated
+    const key = `${role}:${cleanEmail}`;
+    const pending = resetVerificationCodes[key];
+
+    if (pending) {
+      if (Date.now() > pending.expiresAt) {
+        addToast('error', 'Code Expired', 'The verification code has expired. Please request a new reset code.');
+        return { success: false, message: 'Verification code has expired. Please request a new code.' };
+      }
+
+      if (verificationCode && verificationCode.trim() !== pending.code) {
+        logAudit(
+          'AUTH',
+          'PASSWORD_RESET_FAILED',
+          `Failed password reset attempt for ${role} (${cleanEmail}): Invalid verification code entered.`,
+          'warning'
+        );
+        addToast('error', 'Invalid Code', 'The 6-digit verification code entered is incorrect.');
+        return { success: false, message: 'Invalid 6-digit verification code.' };
+      }
+    }
+
+    // Re-verify institutional identity against actual database records
+    if (role === 'student') {
+      const studentByRoll = students.find((s) => s.rollNo.toUpperCase() === cleanId);
+      if (!studentByRoll || studentByRoll.email.trim().toLowerCase() !== cleanEmail) {
+        const msg = `Candidate Roll Number "${cleanId}" or email "${cleanEmail}" verification failed.`;
+        addToast('error', 'Verification Failed', msg);
+        return { success: false, message: msg };
+      }
+    } else if (role === 'incharge') {
+      const faculty = inCharges.find((f) => f.facultyId.toUpperCase() === cleanId);
+      if (!faculty) {
+        const msg = `Faculty ID "${cleanId}" not found in institutional faculty database.`;
+        addToast('error', 'Faculty Not Found', msg);
+        return { success: false, message: msg };
+      }
+      if (faculty.email.trim().toLowerCase() !== cleanEmail) {
+        const msg = `Email "${cleanEmail}" does not match institutional faculty record for ID "${cleanId}".`;
+        addToast('error', 'Email Mismatch', msg);
+        return { success: false, message: msg };
+      }
+    } else if (role === 'admin') {
+      if (cleanId !== 'SESMS-COE-2026' && cleanId !== 'COE-ADMIN') {
+        const msg = 'Invalid COE Authorization Passcode.';
+        addToast('error', 'Authorization Failed', msg);
+        return { success: false, message: msg };
+      }
+    }
+
+    // Hash password securely
+    const hashedPassword = await hashPasswordSecurely(cleanPassword);
+
+    // Update credentials state and localStorage
+    setUserCredentials((prev) => {
+      const existing = prev.find(
+        (c) =>
+          c.role === role &&
+          (c.email.toLowerCase() === cleanEmail || c.identifier.toUpperCase() === cleanId)
+      );
+
+      if (existing) {
+        return prev.map((c) =>
+          c === existing
+            ? {
+                ...c,
+                email: cleanEmail,
+                password: hashedPassword,
+                isRegistered: true,
+                registeredAt: new Date().toISOString(),
+                identifier: cleanId,
+              }
+            : c
+        );
+      } else {
+        const newCred: UserCredential = {
+          email: cleanEmail,
+          role,
+          password: hashedPassword,
+          isRegistered: true,
+          registeredAt: new Date().toISOString(),
+          identifier: cleanId,
+        };
+        return [...prev, newCred];
+      }
+    });
+
+    // Clear used verification code
+    setResetVerificationCodes((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+
+    logAudit(
+      'AUTH',
+      'PASSWORD_RESET_COMPLETED',
+      `Password successfully reset and updated for ${role} (${cleanEmail}, Identifier: ${cleanId}).`,
+      'info'
+    );
+
+    addToast(
+      'success',
+      'Password Reset Complete',
+      `Your password for ${cleanEmail} has been updated. You can now sign in.`
+    );
+
+    return {
+      success: true,
+      message: `Password reset successfully for ${cleanEmail}. Please sign in with your new password.`,
+    };
+  };
+
   const logout = () => {
     if (currentUser) {
       logAudit('AUTH', 'USER_LOGOUT', `${currentUser.name} (${currentUser.role}) logged out of system.`, 'info');
@@ -1567,6 +1820,8 @@ export const ExamProvider: React.FC<{ children: React.ReactNode }> = ({ children
       userCredentials,
       login,
       registerAccount,
+      requestPasswordResetCode,
+      resetPassword,
       logout,
       currentRole,
       setCurrentRole,

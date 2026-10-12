@@ -20,13 +20,23 @@ import {
   ChevronUp,
   Info,
   Building,
+  RotateCcw,
+  Key,
 } from 'lucide-react';
 
 export const HomeLoginPage: React.FC = () => {
-  const { login, registerAccount, userCredentials, inCharges } = useExam();
+  const {
+    login,
+    registerAccount,
+    requestPasswordResetCode,
+    resetPassword,
+    userCredentials,
+    inCharges,
+    students,
+  } = useExam();
 
-  // Mode: 'login' or 'register'
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  // Mode: 'login' | 'register' | 'forgot'
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
 
   // Login form state
   const [selectedRole, setSelectedRole] = useState<Role>('student');
@@ -46,6 +56,20 @@ export const HomeLoginPage: React.FC = () => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regErrorMsg, setRegErrorMsg] = useState<string | null>(null);
 
+  // Forgot Password form state
+  const [forgotRole, setForgotRole] = useState<Role>('student');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotCode, setForgotCode] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
+  const [forgotGeneratedCode, setForgotGeneratedCode] = useState<string | null>(null);
+  const [forgotAccountName, setForgotAccountName] = useState<string | null>(null);
+  const [forgotErrorMsg, setForgotErrorMsg] = useState<string | null>(null);
+  const [forgotSuccessMsg, setForgotSuccessMsg] = useState<string | null>(null);
+
   // Reference directory toggle
   const [showRefAccounts, setShowRefAccounts] = useState(false);
 
@@ -63,7 +87,7 @@ export const HomeLoginPage: React.FC = () => {
         c.role === 'incharge' &&
         (c.identifier.toUpperCase() === matchedFaculty.facultyId.toUpperCase() ||
           c.email.toLowerCase() === matchedFaculty.email.toLowerCase()) &&
-        c.isRegistered
+      c.isRegistered
     );
 
   // Switch role in login
@@ -120,6 +144,66 @@ export const HomeLoginPage: React.FC = () => {
     } catch (err: any) {
       setLoading(false);
       setRegErrorMsg(err.message || 'Registration failed due to unexpected error.');
+    }
+  };
+
+  const handleRequestResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotErrorMsg(null);
+    setForgotSuccessMsg(null);
+    setLoading(true);
+
+    try {
+      const res = await requestPasswordResetCode(forgotRole, forgotEmail, forgotIdentifier);
+      setLoading(false);
+      if (res.success) {
+        setForgotGeneratedCode(res.code || null);
+        setForgotAccountName(res.accountName || null);
+        if (res.code) {
+          setForgotCode(res.code);
+        }
+        setForgotStep(2);
+      } else {
+        setForgotErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setLoading(false);
+      setForgotErrorMsg(err.message || 'Verification failed. Please check credentials.');
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotErrorMsg(null);
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotErrorMsg('New passwords do not match. Please re-enter.');
+      return;
+    }
+
+    if (forgotNewPassword.length < 4) {
+      setForgotErrorMsg('Password must be at least 4 characters long.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await resetPassword(
+        forgotRole,
+        forgotEmail,
+        forgotIdentifier,
+        forgotNewPassword,
+        forgotCode
+      );
+      setLoading(false);
+      if (res.success) {
+        setForgotSuccessMsg(res.message);
+      } else {
+        setForgotErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setLoading(false);
+      setForgotErrorMsg(err.message || 'Password reset failed due to unexpected error.');
     }
   };
 
@@ -206,7 +290,7 @@ export const HomeLoginPage: React.FC = () => {
 
           {/* Right Column: Interactive Login & Registration Card */}
           <div className="lg:col-span-7 bg-white text-slate-900 rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200">
-            {/* Top Switcher: Sign In vs Register / Activate */}
+            {/* Top Switcher: Sign In vs Register / Activate vs Forgot Password */}
             <div className="flex items-center bg-slate-100 p-1 rounded-2xl mb-6 border border-slate-200">
               <button
                 type="button"
@@ -221,7 +305,7 @@ export const HomeLoginPage: React.FC = () => {
                 }`}
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>Sign In with Registered Email</span>
+                <span>Sign In</span>
               </button>
 
               <button
@@ -237,7 +321,26 @@ export const HomeLoginPage: React.FC = () => {
                 }`}
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>Register / Activate Account</span>
+                <span>Register</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('forgot');
+                  setForgotRole(selectedRole);
+                  if (emailInput) setForgotEmail(emailInput);
+                  setForgotErrorMsg(null);
+                  setForgotSuccessMsg(null);
+                }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  authMode === 'forgot'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Forgot Password</span>
               </button>
             </div>
 
@@ -359,7 +462,19 @@ export const HomeLoginPage: React.FC = () => {
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Step 3: Account Password / Security PIN <span className="text-rose-500">*</span>
                       </label>
-                      <span className="text-[11px] text-slate-400">Strict Verification</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode('forgot');
+                          setForgotRole(selectedRole);
+                          if (emailInput) setForgotEmail(emailInput);
+                          setForgotErrorMsg(null);
+                          setForgotSuccessMsg(null);
+                        }}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
+                      >
+                        Forgot Password?
+                      </button>
                     </div>
                     <div className="relative">
                       <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -402,9 +517,22 @@ export const HomeLoginPage: React.FC = () => {
                   </button>
                 </form>
 
-                {/* Account Activation Switch Link */}
+                {/* Account Activation & Forgot Password Switch Links */}
                 <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
-                  <span>Need to register your email or set a password?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('forgot');
+                      setForgotRole(selectedRole);
+                      if (emailInput) setForgotEmail(emailInput);
+                      setForgotErrorMsg(null);
+                      setForgotSuccessMsg(null);
+                    }}
+                    className="text-slate-600 hover:text-indigo-600 font-medium transition text-left cursor-pointer flex items-center gap-1.5"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Forgot Password?</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -417,7 +545,7 @@ export const HomeLoginPage: React.FC = () => {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : authMode === 'register' ? (
               /* TAB 2: REGISTER & SECURE ACCOUNT MODE */
               <div>
                 <div className="mb-4">
@@ -715,18 +843,444 @@ export const HomeLoginPage: React.FC = () => {
                   </button>
                 </form>
 
-                {/* Back to Login Link */}
+                {/* Back to Login & Forgot Password Links */}
                 <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
-                  <span>Already registered your email address?</span>
                   <button
                     type="button"
                     onClick={() => {
                       setAuthMode('login');
                       setErrorMsg(null);
                     }}
-                    className="font-bold text-indigo-600 hover:text-indigo-800 transition text-left sm:text-right cursor-pointer"
+                    className="font-bold text-indigo-600 hover:text-indigo-800 transition text-left cursor-pointer"
                   >
-                    Sign In with Registered Email →
+                    ← Sign In with Registered Email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('forgot');
+                      setForgotRole(regRole);
+                      if (regEmail) setForgotEmail(regEmail);
+                      if (regIdentifier) setForgotIdentifier(regIdentifier);
+                      setForgotErrorMsg(null);
+                      setForgotSuccessMsg(null);
+                    }}
+                    className="text-slate-600 hover:text-indigo-600 transition text-left sm:text-right cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* TAB 3: FORGOT / RESET PASSWORD MODE */
+              <div>
+                <div className="mb-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                      <KeyRound className="w-5 h-5 text-indigo-600" />
+                      <span>Reset Account Password</span>
+                    </h2>
+                    <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200">
+                      Identity Verification
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Verify your enrolled institutional identity (Roll Number, Faculty ID, or COE Passcode) to securely set a new access password.
+                  </p>
+                </div>
+
+                {/* Success Banner */}
+                {forgotSuccessMsg ? (
+                  <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-4 animate-in fade-in">
+                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-emerald-900">Password Reset Successfully</h3>
+                      <p className="text-xs text-emerald-700 mt-1 max-w-md mx-auto leading-relaxed">
+                        {forgotSuccessMsg}
+                      </p>
+                    </div>
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRole(forgotRole);
+                          setEmailInput(forgotEmail);
+                          setPasswordInput('');
+                          setAuthMode('login');
+                          setForgotSuccessMsg(null);
+                          setForgotStep(1);
+                          setForgotGeneratedCode(null);
+                          setErrorMsg(null);
+                        }}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span>Sign In with New Password Now</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Role Selection */}
+                    <div className="mb-4">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                        Step 1: Select Your Account Role
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotRole('student');
+                            setForgotStep(1);
+                            setForgotErrorMsg(null);
+                          }}
+                          className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                            forgotRole === 'student'
+                              ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 ring-2 ring-indigo-500/20'
+                              : 'border-slate-200 bg-slate-50/40 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <User className="w-4 h-4 mb-1 text-indigo-600" />
+                          <span className="font-bold text-xs">Student</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotRole('incharge');
+                            setForgotStep(1);
+                            setForgotErrorMsg(null);
+                          }}
+                          className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                            forgotRole === 'incharge'
+                              ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 ring-2 ring-indigo-500/20'
+                              : 'border-slate-200 bg-slate-50/40 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <UserCheck className="w-4 h-4 mb-1 text-indigo-600" />
+                          <span className="font-bold text-xs">Faculty In-Charge</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotRole('admin');
+                            setForgotStep(1);
+                            setForgotErrorMsg(null);
+                          }}
+                          className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                            forgotRole === 'admin'
+                              ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 ring-2 ring-indigo-500/20'
+                              : 'border-slate-200 bg-slate-50/40 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <Shield className="w-4 h-4 mb-1 text-indigo-600" />
+                          <span className="font-bold text-xs">Exam Admin</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Role Guidelines Notice */}
+                    <div className="mb-4 p-2.5 rounded-xl text-[11px] leading-relaxed border bg-slate-50 border-slate-200 flex items-start gap-2">
+                      <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                      <div>
+                        {forgotRole === 'student' && (
+                          <p className="text-slate-700">
+                            <strong className="text-indigo-900">Candidate Recovery:</strong> Verification requires your registered institutional email and your enrolled Roll Number (e.g. ME101, CS101).
+                          </p>
+                        )}
+                        {forgotRole === 'incharge' && (
+                          <p className="text-slate-700">
+                            <strong className="text-indigo-900">Faculty In-Charge Recovery:</strong> Verification requires your registered institutional email and your official Faculty ID (e.g. FAC-1001, FAC-1002, FAC-1003).
+                          </p>
+                        )}
+                        {forgotRole === 'admin' && (
+                          <p className="text-slate-700">
+                            <strong className="text-indigo-900">COE Administrator Recovery:</strong> Requires your registered admin email and the COE Master Authorization Passcode (<code>SESMS-COE-2026</code>).
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step Indicators */}
+                    <div className="flex items-center gap-2 mb-4">
+                      <div
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center gap-2 border ${
+                          forgotStep === 1
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-900'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        }`}
+                      >
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-white ${
+                          forgotStep === 1 ? 'bg-indigo-600' : 'bg-emerald-600'
+                        }`}>
+                          {forgotStep === 1 ? '1' : '✓'}
+                        </span>
+                        <span>1. Verify Institutional ID</span>
+                      </div>
+
+                      <div
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center gap-2 border ${
+                          forgotStep === 2
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-900'
+                            : 'bg-slate-50 border-slate-200 text-slate-400'
+                        }`}
+                      >
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-white ${
+                          forgotStep === 2 ? 'bg-indigo-600' : 'bg-slate-300 text-slate-600'
+                        }`}>
+                          2
+                        </span>
+                        <span>2. Enter Code & Set Password</span>
+                      </div>
+                    </div>
+
+                    {/* STEP 1: VERIFY IDENTITY & SEND CODE */}
+                    {forgotStep === 1 ? (
+                      <form onSubmit={handleRequestResetCode} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Registered Institutional Email <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="email"
+                              required
+                              value={forgotEmail}
+                              onChange={(e) => {
+                                setForgotEmail(e.target.value);
+                                setForgotErrorMsg(null);
+                              }}
+                              className="w-full text-xs pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-900 bg-slate-50/60 focus:bg-white"
+                              placeholder={
+                                forgotRole === 'student'
+                                  ? 'e.g. rahul.me101@univ.edu or aarav.cs101@univ.edu'
+                                  : forgotRole === 'incharge'
+                                  ? 'e.g. anand.ramanathan@univ.edu'
+                                  : 'e.g. admin@univ.edu'
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            {forgotRole === 'student'
+                              ? 'Official Candidate Roll Number'
+                              : forgotRole === 'incharge'
+                              ? 'Official Faculty ID'
+                              : 'COE Master Security Passcode'}{' '}
+                            <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              required
+                              value={forgotIdentifier}
+                              onChange={(e) => {
+                                setForgotIdentifier(e.target.value);
+                                setForgotErrorMsg(null);
+                              }}
+                              className="w-full text-xs pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-900 bg-slate-50/60 focus:bg-white font-mono uppercase"
+                              placeholder={
+                                forgotRole === 'student'
+                                  ? 'e.g. ME101, CS101, EC101'
+                                  : forgotRole === 'incharge'
+                                  ? 'e.g. FAC-1001, FAC-1002, FAC-1003'
+                                  : 'SESMS-COE-2026'
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        {forgotErrorMsg && (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 animate-in fade-in">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                            <p className="leading-relaxed">{forgotErrorMsg}</p>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <span>{loading ? 'Verifying Identity...' : 'Verify Identity & Send Reset Code'}</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </form>
+                    ) : (
+                      /* STEP 2: ENTER CODE & SET NEW PASSWORD */
+                      <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+                        {/* Verified Identity Header */}
+                        <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                            <div className="text-xs">
+                              <span className="font-bold text-indigo-950 block">
+                                {forgotAccountName || forgotIdentifier}
+                              </span>
+                              <span className="text-[11px] text-indigo-700 font-mono">
+                                {forgotEmail}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgotStep(1);
+                              setForgotErrorMsg(null);
+                            }}
+                            className="text-[11px] text-indigo-600 hover:text-indigo-900 font-semibold underline cursor-pointer"
+                          >
+                            Change
+                          </button>
+                        </div>
+
+                        {/* Simulation Dispatch Alert */}
+                        {forgotGeneratedCode && (
+                          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>
+                                Verification Code: <strong className="font-mono text-sm tracking-wider bg-white px-2 py-0.5 rounded border border-amber-300 text-amber-950">{forgotGeneratedCode}</strong>
+                              </span>
+                            </div>
+                            {forgotCode !== forgotGeneratedCode && (
+                              <button
+                                type="button"
+                                onClick={() => setForgotCode(forgotGeneratedCode)}
+                                className="text-[11px] font-bold text-amber-800 bg-amber-200/70 hover:bg-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                              >
+                                Auto-Fill
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            6-Digit Verification Code <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Key className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              required
+                              maxLength={6}
+                              value={forgotCode}
+                              onChange={(e) => {
+                                setForgotCode(e.target.value.trim());
+                                setForgotErrorMsg(null);
+                              }}
+                              className="w-full text-xs pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900 bg-slate-50/60 focus:bg-white font-mono tracking-widest text-center"
+                              placeholder="123456"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            New Password <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type={showForgotNewPassword ? 'text' : 'password'}
+                              required
+                              value={forgotNewPassword}
+                              onChange={(e) => {
+                                setForgotNewPassword(e.target.value);
+                                setForgotErrorMsg(null);
+                              }}
+                              className="w-full text-xs pl-10 pr-10 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-900 bg-slate-50/60 focus:bg-white font-mono"
+                              placeholder="Enter new account password (min. 4 chars)..."
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                            >
+                              {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Confirm New Password <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type={showForgotNewPassword ? 'text' : 'password'}
+                              required
+                              value={forgotConfirmPassword}
+                              onChange={(e) => {
+                                setForgotConfirmPassword(e.target.value);
+                                setForgotErrorMsg(null);
+                              }}
+                              className="w-full text-xs pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-900 bg-slate-50/60 focus:bg-white font-mono"
+                              placeholder="Confirm new password..."
+                            />
+                          </div>
+                          {forgotConfirmPassword && (
+                            <p className={`text-[11px] mt-1 font-medium ${
+                              forgotNewPassword === forgotConfirmPassword ? 'text-emerald-600' : 'text-rose-500'
+                            }`}>
+                              {forgotNewPassword === forgotConfirmPassword
+                                ? '✓ Passwords match'
+                                : '⚠ Passwords do not match'}
+                            </p>
+                          )}
+                        </div>
+
+                        {forgotErrorMsg && (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 animate-in fade-in">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                            <p className="leading-relaxed">{forgotErrorMsg}</p>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <span>{loading ? 'Updating Password...' : 'Reset Password & Secure Account'}</span>
+                          <ShieldCheck className="w-4 h-4" />
+                        </button>
+                      </form>
+                    )}
+                  </>
+                )}
+
+                {/* Bottom navigation links */}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setErrorMsg(null);
+                    }}
+                    className="font-bold text-indigo-600 hover:text-indigo-800 transition text-left cursor-pointer flex items-center gap-1"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                    <span>Back to Sign In</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('register');
+                      setRegErrorMsg(null);
+                    }}
+                    className="font-medium text-slate-600 hover:text-indigo-600 transition text-left sm:text-right cursor-pointer"
+                  >
+                    Need to Register an Account? →
                   </button>
                 </div>
               </div>
@@ -889,6 +1443,28 @@ export const HomeLoginPage: React.FC = () => {
                         Register This Account →
                       </button>
                     </div>
+                  </div>
+
+                  {/* Forgot Password Recovery Tip */}
+                  <div className="mt-2.5 p-2 rounded-xl bg-slate-100 border border-slate-200 text-[11px] text-slate-600 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span><strong>Lost access?</strong> Use <em>Forgot Password</em> with any registered Roll Number, Faculty ID, or COE Passcode.</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('forgot');
+                        setForgotRole('student');
+                        setForgotEmail('rahul.me101@univ.edu');
+                        setForgotIdentifier('ME101');
+                        setForgotErrorMsg(null);
+                        setForgotSuccessMsg(null);
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold underline shrink-0 cursor-pointer ml-2"
+                    >
+                      Try Test Reset →
+                    </button>
                   </div>
 
                   <p className="text-[10px] text-slate-400 text-center">
